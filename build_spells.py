@@ -22,6 +22,14 @@ EXTRACTION_QUERIES = [
     "transfiguration spell conjuring summoning",
     "shield charm protection defensive spell",
     "healing spell potion magical remedy",
+    "Riddikulus Boggart Patronus Dementor",
+    "Alohomora Nox Reparo Obliviate memory",
+    "Sectumsempra Levicorpus Langlock half-blood prince",
+    "Stupefy Petrificus Totalus Impedimenta jinx",
+    "Finite Incantatum Engorgio Reducio Aguamenti",
+    "Protego Expecto Patronum charm defence",
+    "Horcrux magic dark arts Voldemort",
+    "Priori Incantatem Prior wand spell echo",
 ]
 
 EXTRACT_PROMPT = """You are a precise magical archivist. From the passages below, extract every spell, charm, hex, jinx, or curse that appears.
@@ -74,7 +82,7 @@ def main():
 
     print("Retrieving spell-related chunks from ChromaDB…")
     for query in EXTRACTION_QUERIES:
-        results = query_collection(collection, query, n_results=20)
+        results = query_collection(collection, query, n_results=50)
         for doc, meta, dist in results:
             key = f"{meta['book']}_{meta['chapter_number']}_{meta['chunk_index']}"
             if key not in seen_chunks:
