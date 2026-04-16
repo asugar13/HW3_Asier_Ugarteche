@@ -28,7 +28,56 @@ def init_db() -> None:
                 content         TEXT    NOT NULL,
                 created_at      TEXT    NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS spells (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                name            TEXT    NOT NULL UNIQUE,
+                effect          TEXT    NOT NULL,
+                book            TEXT    NOT NULL,
+                chapter_number  INTEGER NOT NULL,
+                chapter_title   TEXT    NOT NULL
+            );
         """)
+    finally:
+        conn.close()
+
+
+def save_spell(name: str, effect: str, book: str, chapter_number: int, chapter_title: str) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO spells (name, effect, book, chapter_number, chapter_title) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name.strip(), effect.strip(), book, chapter_number, chapter_title),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_spells(search: str = "") -> list:
+    conn = _connect()
+    try:
+        if search:
+            rows = conn.execute(
+                "SELECT name, effect, book, chapter_number, chapter_title FROM spells "
+                "WHERE name LIKE ? OR effect LIKE ? "
+                "ORDER BY name ASC",
+                (f"%{search}%", f"%{search}%"),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT name, effect, book, chapter_number, chapter_title FROM spells "
+                "ORDER BY name ASC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def spells_count() -> int:
+    conn = _connect()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM spells").fetchone()[0]
     finally:
         conn.close()
 

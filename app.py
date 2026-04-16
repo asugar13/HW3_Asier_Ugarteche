@@ -96,58 +96,76 @@ with st.sidebar:
     )
     st.divider()
 
-    if st.button("➕ New conversation"):
-        st.session_state.history = []
-        st.session_state.citations = []
-        st.session_state.conversation_id = database.create_conversation()
-        st.rerun()
+    tab_chat, tab_spells = st.tabs(["💬 Conversations", "✨ Spell Encyclopaedia"])
 
-    if st.button("🗑️ Clear conversation"):
-        database.delete_conversation(st.session_state.conversation_id)
-        st.session_state.history = []
-        st.session_state.citations = []
-        st.session_state.conversation_id = database.create_conversation()
-        st.rerun()
-
-    st.divider()
-    st.subheader("Past conversations")
-    if "editing_title" not in st.session_state:
-        st.session_state.editing_title = None
-
-    for conv in database.list_conversations():
-        if st.session_state.editing_title == conv["id"]:
-            new_title = st.text_input("", value=conv["title"], key=f"title_input_{conv['id']}")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Save", key=f"save_{conv['id']}"):
-                    database.set_title(conv["id"], new_title)
-                    st.session_state.editing_title = None
-                    st.rerun()
-            with col2:
-                if st.button("Cancel", key=f"cancel_{conv['id']}"):
-                    st.session_state.editing_title = None
-                    st.rerun()
+    with tab_spells:
+        spell_count = database.spells_count()
+        if spell_count == 0:
+            st.info("No spells indexed yet. Run `python build_spells.py` to populate the encyclopaedia.")
         else:
-            col1, col2, col3 = st.columns([4, 1, 1])
-            with col1:
-                if st.button(conv["title"], key=f"conv_{conv['id']}"):
-                    msgs = database.load_conversation(conv["id"])
-                    st.session_state.history = msgs
-                    st.session_state.citations = [[] for _ in range(len(msgs) // 2)]
-                    st.session_state.conversation_id = conv["id"]
-                    st.rerun()
-            with col2:
-                if st.button("✏️", key=f"edit_{conv['id']}"):
-                    st.session_state.editing_title = conv["id"]
-                    st.rerun()
-            with col3:
-                if st.button("🗑", key=f"del_{conv['id']}"):
-                    database.delete_conversation(conv["id"])
-                    if st.session_state.conversation_id == conv["id"]:
-                        st.session_state.history = []
-                        st.session_state.citations = []
-                        st.session_state.conversation_id = database.create_conversation()
-                    st.rerun()
+            st.caption(f"{spell_count} spells in the library")
+            search = st.text_input("Search spells…", key="spell_search")
+            spells = database.list_spells(search)
+            if not spells:
+                st.write("No spells found.")
+            for spell in spells:
+                with st.expander(f"**{spell['name']}**"):
+                    st.markdown(f"**Effect:** {spell['effect']}")
+                    st.caption(f"{spell['book']} — Chapter {spell['chapter_number']}: {spell['chapter_title']}")
 
-    st.divider()
-    st.caption("All processing runs locally. No data sent externally.")
+    with tab_chat:
+        if st.button("➕ New conversation"):
+            st.session_state.history = []
+            st.session_state.citations = []
+            st.session_state.conversation_id = database.create_conversation()
+            st.rerun()
+
+        if st.button("🗑️ Clear conversation"):
+            database.delete_conversation(st.session_state.conversation_id)
+            st.session_state.history = []
+            st.session_state.citations = []
+            st.session_state.conversation_id = database.create_conversation()
+            st.rerun()
+
+        st.divider()
+        st.subheader("Past conversations")
+        if "editing_title" not in st.session_state:
+            st.session_state.editing_title = None
+
+        for conv in database.list_conversations():
+            if st.session_state.editing_title == conv["id"]:
+                new_title = st.text_input("", value=conv["title"], key=f"title_input_{conv['id']}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Save", key=f"save_{conv['id']}"):
+                        database.set_title(conv["id"], new_title)
+                        st.session_state.editing_title = None
+                        st.rerun()
+                with col2:
+                    if st.button("Cancel", key=f"cancel_{conv['id']}"):
+                        st.session_state.editing_title = None
+                        st.rerun()
+            else:
+                col1, col2, col3 = st.columns([4, 1, 1])
+                with col1:
+                    if st.button(conv["title"], key=f"conv_{conv['id']}"):
+                        msgs = database.load_conversation(conv["id"])
+                        st.session_state.history = msgs
+                        st.session_state.citations = [[] for _ in range(len(msgs) // 2)]
+                        st.session_state.conversation_id = conv["id"]
+                        st.rerun()
+                with col2:
+                    if st.button("✏️", key=f"edit_{conv['id']}"):
+                        st.session_state.editing_title = conv["id"]
+                        st.rerun()
+                with col3:
+                    if st.button("🗑", key=f"del_{conv['id']}"):
+                        database.delete_conversation(conv["id"])
+                        if st.session_state.conversation_id == conv["id"]:
+                            st.session_state.history = []
+                            st.session_state.citations = []
+                            st.session_state.conversation_id = database.create_conversation()
+                        st.rerun()
+
+        st.divider()
+        st.caption("All processing runs locally. No data sent externally.")
