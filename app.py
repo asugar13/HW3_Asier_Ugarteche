@@ -32,13 +32,12 @@ def _show_citations(retrieved):
     if not retrieved:
         return
     with st.expander("📖 Sources retrieved from the library", expanded=False):
-        seen = set()
-        for _, meta, dist in retrieved:
-            ref = f"**{meta['book']}** — Chapter {meta['chapter_number']}: *{meta['chapter_title']}*"
-            if ref not in seen:
-                seen.add(ref)
-                score = round(1 - dist, 3)
-                st.markdown(f"- {ref} (similarity: {score})")
+        for doc, meta, dist in retrieved:
+            score = round(1 - dist, 3)
+            ref = f"**{meta['book']}** — Chapter {meta['chapter_number']}: *{meta['chapter_title']}* (similarity: {score})"
+            st.markdown(ref)
+            st.caption(doc)
+            st.divider()
 
 
 # Session state
