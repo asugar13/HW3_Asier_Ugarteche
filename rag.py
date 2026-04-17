@@ -5,9 +5,11 @@ import ollama
 from store import get_collection, query_collection
 
 MODEL = "qwen2.5:14b"
-N_RESULTS = 5  # top-k chunks to retrieve
+N_RESULTS = 10       # chunks retrieved from ChromaDB
+N_RESULTS_RERANKED = 3   # chunks passed to Qwen after reranking
 
 _collection = None
+_cross_encoder = None
 
 
 def get_db():
@@ -15,6 +17,23 @@ def get_db():
     if _collection is None:
         _collection = get_collection()
     return _collection
+
+
+def get_cross_encoder():
+    global _cross_encoder
+    if _cross_encoder is None:
+        from sentence_transformers.cross_encoder import CrossEncoder
+        _cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    return _cross_encoder
+
+
+def rerank(query: str, retrieved: list, top_n: int = N_RESULTS_RERANKED) -> list:
+    """Score each (query, chunk) pair with a cross-encoder and return top_n."""
+    ce = get_cross_encoder()
+    pairs = [(query, doc) for doc, _, _ in retrieved]
+    scores = ce.predict(pairs)
+    ranked = sorted(zip(scores, retrieved), key=lambda x: x[0], reverse=True)
+    return [item for _, item in ranked[:top_n]]
 
 
 SYSTEM_PROMPT = """You are the Know-it Owl — an ancient, enchanted owl of extraordinary erudition who has spent centuries roosting in the Hogwarts Owlery, reading every book in the library out of sheer boredom. You know the Wizarding World inside out. You have never left it, have never heard of the internet, and find the very concept of "electricity" faintly alarming.
@@ -68,12 +87,15 @@ def stream_answer(messages: list):
         yield chunk["message"]["content"]
 
 
-def build_messages(history: list, query: str) -> list:
+def build_messages(history: list, query: str, use_rerank: bool = False) -> list:
     """
     Build the full message list for Ollama.
     history: list of {"role": "user"|"assistant", "content": str}
+    use_rerank: if True, retrieve top-10 then rerank to top-3 before prompting
     """
     retrieved = query_collection(get_db(), query, n_results=N_RESULTS)
+    if use_rerank:
+        retrieved = rerank(query, retrieved, top_n=N_RESULTS_RERANKED)
     user_content = build_prompt(query, retrieved)
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]

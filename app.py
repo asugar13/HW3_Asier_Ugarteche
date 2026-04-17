@@ -56,12 +56,15 @@ for i, msg in enumerate(st.session_state.history):
         if msg["role"] == "assistant" and i // 2 < len(st.session_state.citations):
             _show_citations(st.session_state.citations[i // 2])
 
+use_rerank = st.sidebar.toggle("✨ Reranking (top-10 → top-3)", value=False,
+                               help="Retrieve 10 chunks, rerank with a cross-encoder, pass top-3 to Qwen")
+
 # Chat input
 if prompt := st.chat_input("Ask the owl…"):
     with st.chat_message("user", avatar="🧙"):
         st.markdown(prompt)
 
-    messages, retrieved = build_messages(st.session_state.history, prompt)
+    messages, retrieved = build_messages(st.session_state.history, prompt, use_rerank=use_rerank)
 
     with st.chat_message("assistant", avatar="🦉"):
         response_placeholder = st.empty()
