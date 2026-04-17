@@ -28,13 +28,23 @@ st.info(
 )
 
 
-def _show_citations(retrieved):
+def _show_citations(retrieved, mode: str = "vector"):
     if not retrieved:
         return
+    mode_label = {
+        "vector": "vector similarity",
+        "hybrid": "RRF score",
+        "rerank": "cross-encoder score",
+        "hybrid+rerank": "cross-encoder score (hybrid)",
+    }
     with st.expander("📖 Sources retrieved from the library", expanded=False):
-        for doc, meta, dist in retrieved:
-            score = round(1 - dist, 3)
-            ref = f"**{meta['book']}** — Chapter {meta['chapter_number']}: *{meta['chapter_title']}* (similarity: {score})"
+        st.caption(f"Retrieval mode: **{mode}**")
+        for doc, meta, score in retrieved:
+            if mode == "vector":
+                score_str = f"{mode_label[mode]}: {round(1 - float(score), 3)}"
+            else:
+                score_str = f"{mode_label[mode]}: {round(float(score), 4)}"
+            ref = f"**{meta['book']}** — Chapter {meta['chapter_number']}: *{meta['chapter_title']}* ({score_str})"
             st.markdown(ref)
             st.caption(doc)
             st.divider()
@@ -53,17 +63,29 @@ for i, msg in enumerate(st.session_state.history):
     with st.chat_message(msg["role"], avatar="🦉" if msg["role"] == "assistant" else "🧙"):
         st.markdown(msg["content"])
         if msg["role"] == "assistant" and i // 2 < len(st.session_state.citations):
-            _show_citations(st.session_state.citations[i // 2])
+            entry = st.session_state.citations[i // 2]
+            _show_citations(entry["retrieved"], mode=entry["mode"])
 
 use_rerank = st.sidebar.toggle("✨ Reranking (top-10 → top-3)", value=False,
                                help="Retrieve 10 chunks, rerank with a cross-encoder, pass top-3 to Qwen")
+use_hybrid = st.sidebar.toggle("🔀 Hybrid search (vector + BM25)", value=False,
+                                help="Combine ChromaDB vector search with BM25 keyword search via Reciprocal Rank Fusion")
 
 # Chat input
 if prompt := st.chat_input("Ask the owl…"):
     with st.chat_message("user", avatar="🧙"):
         st.markdown(prompt)
 
-    messages, retrieved = build_messages(st.session_state.history, prompt, use_rerank=use_rerank)
+    if use_hybrid and use_rerank:
+        mode = "hybrid+rerank"
+    elif use_hybrid:
+        mode = "hybrid"
+    elif use_rerank:
+        mode = "rerank"
+    else:
+        mode = "vector"
+
+    messages, retrieved = build_messages(st.session_state.history, prompt, use_rerank=use_rerank, use_hybrid=use_hybrid)
 
     with st.chat_message("assistant", avatar="🦉"):
         response_placeholder = st.empty()
@@ -72,7 +94,7 @@ if prompt := st.chat_input("Ask the owl…"):
             full_response += chunk
             response_placeholder.markdown(full_response + "▌")
         response_placeholder.markdown(full_response)
-        _show_citations(retrieved)
+        _show_citations(retrieved, mode=mode)
 
     # Persist to DB
     conv_id = st.session_state.conversation_id
@@ -86,7 +108,7 @@ if prompt := st.chat_input("Ask the owl…"):
     # Update session state
     st.session_state.history.append({"role": "user", "content": prompt})
     st.session_state.history.append({"role": "assistant", "content": full_response})
-    st.session_state.citations.append(retrieved)
+    st.session_state.citations.append({"retrieved": retrieved, "mode": mode})
 
 # Sidebar
 with st.sidebar:
@@ -153,7 +175,7 @@ with st.sidebar:
                     if st.button(conv["title"], key=f"conv_{conv['id']}"):
                         msgs = database.load_conversation(conv["id"])
                         st.session_state.history = msgs
-                        st.session_state.citations = [[] for _ in range(len(msgs) // 2)]
+                        st.session_state.citations = [{"retrieved": [], "mode": "vector"} for _ in range(len(msgs) // 2)]
                         st.session_state.conversation_id = conv["id"]
                         st.rerun()
                 with col2:

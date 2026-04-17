@@ -5,11 +5,13 @@ import ollama
 from store import get_collection, query_collection
 
 MODEL = "qwen2.5:14b"
-N_RESULTS = 10       # chunks retrieved from ChromaDB
+N_RESULTS = 10           # chunks retrieved from ChromaDB
 N_RESULTS_RERANKED = 3   # chunks passed to Qwen after reranking
 
 _collection = None
 _cross_encoder = None
+_bm25_index = None
+_bm25_corpus = None  # list of (doc, meta) parallel to BM25 index
 
 
 def get_db():
@@ -17,6 +19,54 @@ def get_db():
     if _collection is None:
         _collection = get_collection()
     return _collection
+
+
+def get_bm25():
+    """Lazy-load BM25 index built from all chunks in ChromaDB."""
+    global _bm25_index, _bm25_corpus
+    if _bm25_index is None:
+        from rank_bm25 import BM25Okapi
+        print("Building BM25 index from ChromaDB…")
+        collection = get_db()
+        # Fetch all documents (in batches to avoid memory issues)
+        results = collection.get(include=["documents", "metadatas"])
+        docs = results["documents"]
+        metas = results["metadatas"]
+        tokenized = [doc.lower().split() for doc in docs]
+        _bm25_index = BM25Okapi(tokenized)
+        _bm25_corpus = list(zip(docs, metas))
+        print(f"BM25 index built: {len(docs)} chunks.")
+    return _bm25_index, _bm25_corpus
+
+
+def bm25_search(query: str, n_results: int = N_RESULTS) -> list:
+    """Return top-n chunks by BM25 score as (doc, meta, score) tuples."""
+    import numpy as np
+    bm25, corpus = get_bm25()
+    tokens = query.lower().split()
+    scores = bm25.get_scores(tokens)
+    top_indices = np.argsort(scores)[::-1][:n_results]
+    return [(corpus[i][0], corpus[i][1], float(scores[i])) for i in top_indices]
+
+
+def reciprocal_rank_fusion(vector_results: list, bm25_results: list, k: int = 60) -> list:
+    """Merge two ranked lists using Reciprocal Rank Fusion.
+    RRF score = sum of 1/(k + rank) across all result lists."""
+    scores: dict = {}
+    docs_map: dict = {}
+
+    for rank, (doc, meta, _) in enumerate(vector_results):
+        key = f"{meta['book']}_{meta['chapter_number']}_{meta.get('chunk_index', 0)}"
+        scores[key] = scores.get(key, 0) + 1 / (k + rank + 1)
+        docs_map[key] = (doc, meta)
+
+    for rank, (doc, meta, _) in enumerate(bm25_results):
+        key = f"{meta['book']}_{meta['chapter_number']}_{meta.get('chunk_index', 0)}"
+        scores[key] = scores.get(key, 0) + 1 / (k + rank + 1)
+        docs_map[key] = (doc, meta)
+
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [(docs_map[key][0], docs_map[key][1], rrf_score) for key, rrf_score in ranked]
 
 
 def get_cross_encoder():
@@ -87,13 +137,18 @@ def stream_answer(messages: list):
         yield chunk["message"]["content"]
 
 
-def build_messages(history: list, query: str, use_rerank: bool = False) -> list:
+def build_messages(history: list, query: str, use_rerank: bool = False, use_hybrid: bool = False) -> list:
     """
     Build the full message list for Ollama.
-    history: list of {"role": "user"|"assistant", "content": str}
-    use_rerank: if True, retrieve top-10 then rerank to top-3 before prompting
+    use_rerank: retrieve top-10, rerank with cross-encoder, pass top-3
+    use_hybrid: combine ChromaDB vector search with BM25 keyword search via RRF
     """
-    retrieved = query_collection(get_db(), query, n_results=N_RESULTS)
+    if use_hybrid:
+        vector_results = query_collection(get_db(), query, n_results=N_RESULTS)
+        bm25_results = bm25_search(query, n_results=N_RESULTS)
+        retrieved = reciprocal_rank_fusion(vector_results, bm25_results)[:N_RESULTS]
+    else:
+        retrieved = query_collection(get_db(), query, n_results=N_RESULTS)
     if use_rerank:
         retrieved = rerank(query, retrieved, top_n=N_RESULTS_RERANKED)
     user_content = build_prompt(query, retrieved)
