@@ -8,41 +8,38 @@ MODEL = "qwen2.5:14b"
 N_RESULTS = 10           # chunks retrieved from ChromaDB
 N_RESULTS_RERANKED = 3   # chunks passed to Qwen after reranking
 
-_collection = None
+_collections: dict = {}
 _cross_encoder = None
-_bm25_index = None
-_bm25_corpus = None  # list of (doc, meta) parallel to BM25 index
+_bm25_indexes: dict = {}
+_bm25_corpora: dict = {}
 
 
-def get_db():
-    global _collection
-    if _collection is None:
-        _collection = get_collection()
-    return _collection
+def get_db(collection_name: str = "hp_books"):
+    if collection_name not in _collections:
+        _collections[collection_name] = get_collection(name=collection_name)
+    return _collections[collection_name]
 
 
-def get_bm25():
-    """Lazy-load BM25 index built from all chunks in ChromaDB."""
-    global _bm25_index, _bm25_corpus
-    if _bm25_index is None:
+def get_bm25(collection_name: str = "hp_books"):
+    """Lazy-load BM25 index built from all chunks in a ChromaDB collection."""
+    if collection_name not in _bm25_indexes:
         from rank_bm25 import BM25Okapi
-        print("Building BM25 index from ChromaDB…")
-        collection = get_db()
-        # Fetch all documents (in batches to avoid memory issues)
+        print(f"Building BM25 index for '{collection_name}'…")
+        collection = get_db(collection_name)
         results = collection.get(include=["documents", "metadatas"])
         docs = results["documents"]
         metas = results["metadatas"]
         tokenized = [doc.lower().split() for doc in docs]
-        _bm25_index = BM25Okapi(tokenized)
-        _bm25_corpus = list(zip(docs, metas))
+        _bm25_indexes[collection_name] = BM25Okapi(tokenized)
+        _bm25_corpora[collection_name] = list(zip(docs, metas))
         print(f"BM25 index built: {len(docs)} chunks.")
-    return _bm25_index, _bm25_corpus
+    return _bm25_indexes[collection_name], _bm25_corpora[collection_name]
 
 
-def bm25_search(query: str, n_results: int = N_RESULTS) -> list:
+def bm25_search(query: str, n_results: int = N_RESULTS, collection_name: str = "hp_books") -> list:
     """Return top-n chunks by BM25 score as (doc, meta, score) tuples."""
     import numpy as np
-    bm25, corpus = get_bm25()
+    bm25, corpus = get_bm25(collection_name)
     tokens = query.lower().split()
     scores = bm25.get_scores(tokens)
     top_indices = np.argsort(scores)[::-1][:n_results]
@@ -137,18 +134,21 @@ def stream_answer(messages: list):
         yield chunk["message"]["content"]
 
 
-def build_messages(history: list, query: str, use_rerank: bool = False, use_hybrid: bool = False) -> list:
+def build_messages(history: list, query: str, use_rerank: bool = False,
+                   use_hybrid: bool = False, collection_name: str = "hp_books") -> list:
     """
     Build the full message list for Ollama.
     use_rerank: retrieve top-10, rerank with cross-encoder, pass top-3
     use_hybrid: combine ChromaDB vector search with BM25 keyword search via RRF
+    collection_name: which ChromaDB collection to query
     """
+    db = get_db(collection_name)
     if use_hybrid:
-        vector_results = query_collection(get_db(), query, n_results=N_RESULTS)
-        bm25_results = bm25_search(query, n_results=N_RESULTS)
+        vector_results = query_collection(db, query, n_results=N_RESULTS)
+        bm25_results = bm25_search(query, n_results=N_RESULTS, collection_name=collection_name)
         retrieved = reciprocal_rank_fusion(vector_results, bm25_results)[:N_RESULTS]
     else:
-        retrieved = query_collection(get_db(), query, n_results=N_RESULTS)
+        retrieved = query_collection(db, query, n_results=N_RESULTS)
     if use_rerank:
         retrieved = rerank(query, retrieved, top_n=N_RESULTS_RERANKED)
     user_content = build_prompt(query, retrieved)

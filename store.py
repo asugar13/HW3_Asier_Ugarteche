@@ -5,8 +5,15 @@ import chromadb
 from chromadb.utils import embedding_functions
 
 DB_PATH = "owl_db"
-COLLECTION_NAME = "hp_books"
+DEFAULT_COLLECTION = "hp_books"
 EMBED_MODEL = "all-MiniLM-L6-v2"  # fast, good quality, ~80 MB
+
+COLLECTION_LABELS = {
+    "hp_books":        "7 novels + companions · 500 chars",
+    "hp_books_novels": "7 novels only · 500 chars",
+    "hp_chunks_250":   "7 novels + companions · 250 chars",
+    "hp_chunks_1000":  "7 novels + companions · 1000 chars",
+}
 
 
 def _get_ef():
@@ -15,12 +22,23 @@ def _get_ef():
     )
 
 
-def get_collection(read_only: bool = False):
-    """Return (or create) the ChromaDB collection."""
-    client = chromadb.PersistentClient(path=DB_PATH)
+def get_client():
+    return chromadb.PersistentClient(path=DB_PATH)
+
+
+def list_collections() -> list[str]:
+    """Return names of all collections that actually exist in owl_db."""
+    client = get_client()
+    existing = {c.name for c in client.list_collections()}
+    return [name for name in COLLECTION_LABELS if name in existing]
+
+
+def get_collection(name: str = DEFAULT_COLLECTION):
+    """Return (or create) a named ChromaDB collection."""
+    client = get_client()
     ef = _get_ef()
     collection = client.get_or_create_collection(
-        name=COLLECTION_NAME,
+        name=name,
         embedding_function=ef,
         metadata={"hnsw:space": "cosine"},
     )

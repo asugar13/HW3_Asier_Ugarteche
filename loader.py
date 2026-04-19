@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-BOOK_TITLES = {
+NOVELS = {
     "HP1.txt": "Harry Potter and the Philosopher's Stone",
     "HP2.txt": "Harry Potter and the Chamber of Secrets",
     "HP3.txt": "Harry Potter and the Prisoner of Azkaban",
@@ -14,12 +14,16 @@ BOOK_TITLES = {
     "HP5.txt": "Harry Potter and the Order of the Phoenix",
     "HP6.txt": "Harry Potter and the Half-Blood Prince",
     "HP7.txt": "Harry Potter and the Deathly Hallows",
-    # Companion texts (extension)
+}
+
+COMPANIONS = {
     "Fantastic Beasts and Where to Find Them_ The Original Screenplay - J. K. Rowling.txt": "Fantastic Beasts and Where to Find Them",
     "Quidditch Through the Ages - J. K. Rowling.txt": "Quidditch Through the Ages",
     "Tales of Beedle the Bard, The - J.K. Rowling.txt": "The Tales of Beedle the Bard",
     "Harry Potter and the Cursed Child - Parts One and Two - J.K. Rowling & Jack Thorne & John Tiffany.txt": "Harry Potter and the Cursed Child",
 }
+
+BOOK_TITLES = {**NOVELS, **COMPANIONS}
 
 CHAPTER_PATTERN = re.compile(
     r'(?i)^[\–\—\-\s]*chapter[\s]+(\w+)[\–\—\-\s:]*(.*)$', re.MULTILINE
@@ -87,10 +91,10 @@ def parse_book(filepath: str, book_title: str) -> List[TextChunk]:
     return chunks
 
 
-def load_all_books(data_dir: str = "data/") -> List[TextChunk]:
+def _load_books(data_dir: str, titles: dict) -> List[TextChunk]:
     import os
     all_chunks = []
-    for filename, title in BOOK_TITLES.items():
+    for filename, title in titles.items():
         path = os.path.join(data_dir, filename)
         if not os.path.exists(path):
             print(f"  [skip] not found: {path}")
@@ -103,11 +107,21 @@ def load_all_books(data_dir: str = "data/") -> List[TextChunk]:
     return all_chunks
 
 
-def chunk_book_chapters(chapters: List[TextChunk]):
+def load_all_books(data_dir: str = "data/") -> List[TextChunk]:
+    """Load full corpus: 7 novels + companion texts."""
+    return _load_books(data_dir, BOOK_TITLES)
+
+
+def load_novels_only(data_dir: str = "data/") -> List[TextChunk]:
+    """Load 7 novels only (no companion texts)."""
+    return _load_books(data_dir, NOVELS)
+
+
+def chunk_book_chapters(chapters: List[TextChunk], chunk_size: int = 500, chunk_overlap: int = 50):
     """Split chapters into smaller overlapping chunks, preserving metadata."""
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
         separators=["\n\n", "\n", ". ", " "],
     )
     all_docs, all_metas, all_ids = [], [], []

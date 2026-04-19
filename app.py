@@ -6,6 +6,7 @@ Launch:
 """
 import streamlit as st
 from rag import build_messages, stream_answer
+from store import list_collections, COLLECTION_LABELS
 import database
 
 database.init_db()
@@ -66,6 +67,15 @@ for i, msg in enumerate(st.session_state.history):
             entry = st.session_state.citations[i // 2]
             _show_citations(entry["retrieved"], mode=entry["mode"])
 
+available = list_collections()
+collection_options = {COLLECTION_LABELS.get(c, c): c for c in available}
+selected_label = st.sidebar.selectbox(
+    "📚 Knowledge base",
+    options=list(collection_options.keys()),
+    help="Switch between corpus/chunk-size configurations"
+)
+collection_name = collection_options[selected_label]
+
 use_rerank = st.sidebar.toggle("✨ Reranking (top-10 → top-3)", value=False,
                                help="Retrieve 10 chunks, rerank with a cross-encoder, pass top-3 to Qwen")
 use_hybrid = st.sidebar.toggle("🔀 Hybrid search (vector + BM25)", value=False,
@@ -85,7 +95,7 @@ if prompt := st.chat_input("Ask the owl…"):
     else:
         mode = "vector"
 
-    messages, retrieved = build_messages(st.session_state.history, prompt, use_rerank=use_rerank, use_hybrid=use_hybrid)
+    messages, retrieved = build_messages(st.session_state.history, prompt, use_rerank=use_rerank, use_hybrid=use_hybrid, collection_name=collection_name)
 
     with st.chat_message("assistant", avatar="🦉"):
         response_placeholder = st.empty()
