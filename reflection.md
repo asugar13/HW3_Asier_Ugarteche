@@ -112,7 +112,11 @@ Three configurations were indexed and compared on the same set of test questions
 | 500 chars | 80–120 | Good balance — default choice |
 | 1000 chars | 160–240 | Better for multi-hop questions (e.g. Elder Wand ownership chain); risks retrieving irrelevant surrounding text |
 
-**What I would change:** For a production system I would experiment with semantic chunking (splitting at sentence boundaries using an NLP model rather than character count) to better preserve meaning at chunk edges. I would also increase chunk size for narrative questions and decrease it for factual lookups — potentially using a hybrid index with two chunk sizes.
+**What I would change:**
+
+- **Semantic chunking:** Split at sentence boundaries using an NLP model rather than character count, to better preserve meaning at chunk edges and avoid cutting sentences mid-thought.
+- **Query-aware routing:** Classify the incoming question as factual or narrative, then automatically query a different collection — a 250-char collection for precise factual lookups ("What is the incantation for Expelliarmus?") and a 1000-char collection for narrative questions ("Describe the Battle of Hogwarts"). In this homework the user selects the collection manually via a sidebar dropdown, but in production this routing would happen automatically.
+- **Knowledge graph:** Represent Wizarding World entities (characters, spells, places, objects) and their relationships as structured triples in a graph database like Neo4j. This would dramatically improve multi-hop reasoning questions such as tracing the Elder Wand's ownership chain across multiple books — a case where RAG struggles because the relevant information is spread across many disconnected chunks. In practice, building a knowledge graph from ~1 million words of prose would require either large manual curation or an expensive LLM extraction pipeline, making it out of scope here.
 
 ---
 
